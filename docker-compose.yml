@@ -1,0 +1,65 @@
+# docker-compose.yml
+# Orchestrates all three tiers.
+# Usage:
+#   docker compose up --build        # start everything
+#   docker compose down              # stop (data volume preserved)
+#   docker compose down -v           # stop + wipe database volume
+
+services:
+
+  # ── DATABASE TIER ────────────────────────────────────────
+  db:
+    build: ./db
+    container_name: todo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     todo_user
+      POSTGRES_PASSWORD: todo_pass
+      POSTGRES_DB:       todos
+    volumes:
+      - db_data:/var/lib/postgresql/data   # persists data across restarts
+    ports:
+      - "5432:5432"    # expose for local tools (e.g. pgAdmin, DBeaver)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo_user -d todos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── BACKEND TIER ─────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: todo-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://todo_user:todo_pass@db:5432/todos
+    ports:
+      - "5000:5000"    # expose for direct API testing (curl, Postman)
+    depends_on:
+      db:
+        condition: service_healthy   # wait until Postgres is ready
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/todos')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── FRONTEND TIER ────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: todo-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"      # ← open http://localhost:8080 in your browser
+    depends_on:
+      backend:
+        condition: service_healthy   # wait until API is ready
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+# ── Named volume for PostgreSQL data persistence ──────────
+volumes:
+  db_data:
