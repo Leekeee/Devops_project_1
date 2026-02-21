@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+# Point to the shared base
+resources:
+  - ../../base
+
+# Add env label to every resource
+commonLabels:
+  environment: dev
+
+# Dev-specific patches
+patches:
+  # 1 replica for everything in dev (already the base default, shown for clarity)
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: backend
+
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: frontend
+
+  # Smaller PVC in dev
+  - patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 512Mi
+    target:
+      kind: PersistentVolumeClaim
+      name: db-pvc
+
+  # Dev uses nodePort 30000
+  - patch: |-
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30000
+    target:
+      kind: Service
+      name: frontend-service
+
+  # Relaxed resource limits in dev
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+    target:
+      kind: Deployment
+      name: backend
